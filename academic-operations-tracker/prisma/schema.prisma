@@ -1,0 +1,232 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum Role {
+  ADMIN
+  PRO_RECTOR
+  DIRECTOR
+  COORDINATOR
+  TEAM_RESOURCE
+}
+
+enum TaskStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED_AWAITING_TEAM
+  ACCEPTED_BY_TEAM
+  IN_ANALYSIS
+  IN_DEVELOPMENT
+  IN_TESTING
+  DEPLOYED
+  COORDINATOR_ACCEPTED
+  ACCEPTED_CLOSED
+  REWORK
+  REJECTED_BY_TEAM
+  PAUSED
+  KILLED
+}
+
+enum RequestType {
+  NEW_DEVELOPMENT
+  ENHANCEMENT
+  BUG_FIX
+  POLICY_CHANGE
+}
+
+enum Priority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum DocType {
+  REQUIREMENTS
+  POLICY
+  CHAT_ATTACHMENT
+}
+
+enum DocStatus {
+  UPLOADED
+  APPROVED
+}
+
+enum EffortUnit {
+  HOURS
+  DAYS
+}
+
+enum NotifSeverity {
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
+model User {
+  id        String   @id @default(uuid())
+  msId      String?  @unique
+  email     String   @unique
+  name      String
+  role      Role
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  teamResource    Team[]          @relation("TeamResource")
+  tasksCreated    Task[]          @relation("TaskCoordinator")
+  chatMessages    ChatMessage[]
+  documents       Document[]      @relation("DocumentUploader")
+  auditLogs       AuditLog[]
+  notifications   Notification[]
+  deviceTokens    DeviceToken[]
+  configUpdates   SystemConfig[]  @relation("ConfigUpdater")
+}
+
+model Team {
+  id         String   @id @default(uuid())
+  name       String   @unique
+  resourceId String
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  resource User   @relation("TeamResource", fields: [resourceId], references: [id])
+  tasks    Task[]
+}
+
+model Task {
+  id               String     @id @default(uuid())
+  code             String     @unique
+  title            String     @db.VarChar(200)
+  type             RequestType
+  status           TaskStatus @default(DRAFT)
+  priority         Priority
+  description      String     @db.Text
+  affectedProcess  String
+  expectedOutcome  String     @db.Text
+  expectedDate     DateTime   @db.Date
+  tolerance        Int        @default(7)
+  ictEstimatedDate DateTime?  @db.Date
+  preEffort        Decimal?   @db.Decimal(10, 2)
+  preUnit          EffortUnit?
+  postEffort       Decimal?   @db.Decimal(10, 2)
+  postUnit         EffortUnit?
+  policyRef        String?
+  rejectionCount   Int        @default(0)
+  pauseReason      String?    @db.Text
+  pauseResumeDate  DateTime?  @db.Date
+  pausedFromStatus TaskStatus?
+  coordinatorId    String
+  teamId           String
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  coordinator        User                 @relation("TaskCoordinator", fields: [coordinatorId], references: [id])
+  team               Team                 @relation(fields: [teamId], references: [id])
+  acceptanceCriteria AcceptanceCriterion[]
+  documents          Document[]
+  chatMessages       ChatMessage[]
+  auditLogs          AuditLog[]
+  notifications      Notification[]
+}
+
+model AcceptanceCriterion {
+  id          String    @id @default(uuid())
+  taskId      String
+  description String
+  isComplete  Boolean   @default(false)
+  completedAt DateTime?
+  sortOrder   Int
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model Document {
+  id           String    @id @default(uuid())
+  taskId       String
+  type         DocType
+  filename     String
+  path         String
+  size         Int
+  uploadedById String
+  status       DocStatus @default(UPLOADED)
+  createdAt    DateTime  @default(now())
+
+  task       Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  uploadedBy User          @relation("DocumentUploader", fields: [uploadedById], references: [id])
+  chatMessages ChatMessage[]
+}
+
+model ChatMessage {
+  id           String   @id @default(uuid())
+  taskId       String
+  authorId     String
+  content      String   @db.Text
+  attachmentId String?
+  createdAt    DateTime @default(now())
+
+  task       Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author     User      @relation(fields: [authorId], references: [id])
+  attachment Document? @relation(fields: [attachmentId], references: [id])
+}
+
+model AuditLog {
+  id         String      @id @default(uuid())
+  taskId     String
+  userId     String
+  action     String
+  fromStatus TaskStatus?
+  toStatus   TaskStatus?
+  reason     String?     @db.Text
+  metadata   Json?
+  createdAt  DateTime    @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Notification {
+  id              String        @id @default(uuid())
+  userId          String
+  taskId          String?
+  type            String
+  message         String
+  severity        NotifSeverity @default(NORMAL)
+  isRead          Boolean       @default(false)
+  isSeen          Boolean       @default(false)
+  seenAt          DateTime?
+  emailSent       Boolean       @default(false)
+  pushSent        Boolean       @default(false)
+  escalationLevel Int?
+  createdAt       DateTime      @default(now())
+
+  user User  @relation(fields: [userId], references: [id])
+  task Task? @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model DeviceToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @db.Text
+  device    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model SystemConfig {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String   @db.Text
+  updatedById String
+  updatedAt   DateTime @updatedAt
+
+  updatedBy User @relation("ConfigUpdater", fields: [updatedById], references: [id])
+}
