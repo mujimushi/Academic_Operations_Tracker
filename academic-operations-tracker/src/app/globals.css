@@ -1,0 +1,12 @@
+@import "tailwindcss";
+@config "../../tailwind.config.ts";
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background-color: #F7F8FA;
+  color: #1A1A2E;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: Georgia, "Calisto MT", serif;
+}
