@@ -1,0 +1,21 @@
+{
+  "name": "NUST Academic Operations Tracker",
+  "short_name": "NUST Tracker",
+  "description": "Task tracking system for Academic Directorate and Development Teams",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F7F8FA",
+  "theme_color": "#003366",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
