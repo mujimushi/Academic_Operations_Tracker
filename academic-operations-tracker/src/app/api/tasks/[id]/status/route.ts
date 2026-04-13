@@ -43,6 +43,12 @@ async function triggerStatusNotifications({
   teamName,
   teamResourceId,
   actorName,
+  // Tolerance-check extras (ACCEPTED_BY_TEAM)
+  ictEstimatedDate,
+  expectedDate,
+  tolerance,
+  // 3rd-rejection extras (REWORK)
+  rejectionCount,
 }: {
   taskId: string;
   taskCode: string;
@@ -54,6 +60,10 @@ async function triggerStatusNotifications({
   teamName: string | undefined;
   teamResourceId: string | undefined;
   actorName: string;
+  ictEstimatedDate?: Date | null;
+  expectedDate?: Date | null;
+  tolerance?: number | null;
+  rejectionCount?: number | null;
 }) {
   const n = (
     userId: string,
@@ -128,6 +138,24 @@ async function triggerStatusNotifications({
         break;
       }
 
+      // Any -> ACCEPTED_BY_TEAM: tolerance check — alert Coordinator if ICT date exceeds expected + tolerance
+      case TaskStatus.ACCEPTED_BY_TEAM: {
+        if (ictEstimatedDate && expectedDate != null && tolerance != null) {
+          const deadline = new Date(expectedDate);
+          deadline.setDate(deadline.getDate() + tolerance);
+          if (ictEstimatedDate > deadline) {
+            const fmt = (d: Date) => d.toISOString().slice(0, 10);
+            await n(
+              coordinatorId,
+              "tolerance_breach",
+              `${taskCode} — Team estimate (${fmt(ictEstimatedDate)}) exceeds your expected date (${fmt(expectedDate)}) by more than ${tolerance} days. Renegotiation may be needed.`,
+              NotifSeverity.HIGH
+            );
+          }
+        }
+        break;
+      }
+
       // Any -> REJECTED_BY_TEAM: notify Coordinator (HIGH)
       case TaskStatus.REJECTED_BY_TEAM: {
         await n(
@@ -167,6 +195,7 @@ async function triggerStatusNotifications({
       }
 
       // Any -> REWORK: notify Team resource (HIGH) + Coordinator (HIGH)
+      //   If rejectionCount reaches 3+: auto-escalate to Pro Rector (CRITICAL) + Director (HIGH)
       case TaskStatus.REWORK: {
         if (teamResourceId) {
           await n(
@@ -182,6 +211,21 @@ async function triggerStatusNotifications({
           `${taskCode} rejected after deployment: ${reason ?? "no reason given"}`,
           NotifSeverity.HIGH
         );
+
+        // Auto-escalation on 3rd (or subsequent) rejection
+        if (rejectionCount != null && rejectionCount >= 3) {
+          const escalationMsg = `${taskCode} has been rejected ${rejectionCount} times after deployment. Auto-escalated to Pro Rector.`;
+          const [proRector, director] = await Promise.all([
+            findProRector(),
+            findDirector(),
+          ]);
+          if (proRector) {
+            await n(proRector.id, "escalation", escalationMsg, NotifSeverity.CRITICAL);
+          }
+          if (director) {
+            await n(director.id, "escalation", escalationMsg, NotifSeverity.HIGH);
+          }
+        }
         break;
       }
 
@@ -398,6 +442,12 @@ export async function PATCH(
     teamName: updatedTask.team?.name ?? undefined,
     teamResourceId: updatedTask.team?.resource?.id ?? undefined,
     actorName: session.user.name ?? "User",
+    // Tolerance-check data (used when toStatus === ACCEPTED_BY_TEAM)
+    ictEstimatedDate: updatedTask.ictEstimatedDate ?? null,
+    expectedDate: updatedTask.expectedDate ?? null,
+    tolerance: updatedTask.tolerance ?? null,
+    // Rejection-count data (used when toStatus === REWORK)
+    rejectionCount: updatedTask.rejectionCount ?? null,
   }).catch((err) =>
     console.error("[notifications] Unhandled notification error:", err)
   );
