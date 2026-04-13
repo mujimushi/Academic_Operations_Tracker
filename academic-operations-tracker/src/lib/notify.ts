@@ -1,6 +1,7 @@
 import { prisma } from "./prisma";
 import { sseManager } from "./sse";
 import { NotifSeverity } from "@/generated/prisma/client";
+import { sendEmail, buildTaskEmailHtml } from "./email";
 
 type NotifyParams = {
   userId: string;
@@ -32,12 +33,34 @@ export async function notify(params: NotifyParams) {
     payload: notification,
   });
 
-  // Mark emailSent for HIGH/CRITICAL (actual email sending deferred to Task 23)
+  // Send email for HIGH/CRITICAL severity
   if (params.severity === "HIGH" || params.severity === "CRITICAL") {
-    await prisma.notification.update({
-      where: { id: notification.id },
-      data: { emailSent: true },
+    const user = await prisma.user.findUnique({
+      where: { id: params.userId },
+      select: { email: true },
     });
+
+    if (user?.email && notification.task) {
+      const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
+      const taskUrl = `${baseUrl}/task/${notification.task.id}`;
+
+      const emailSent = await sendEmail({
+        to: user.email,
+        subject: `[AOT] ${notification.task.code} — ${params.message}`,
+        html: buildTaskEmailHtml({
+          heading: params.type.replace(/_/g, " "),
+          message: params.message,
+          taskCode: notification.task.code,
+          taskTitle: notification.task.title,
+          actionUrl: taskUrl,
+        }),
+      });
+
+      await prisma.notification.update({
+        where: { id: notification.id },
+        data: { emailSent },
+      });
+    }
   }
 
   return notification;
