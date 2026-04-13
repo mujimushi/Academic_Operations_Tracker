@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Role, TaskStatus } from "@/generated/prisma/client";
+import { Role, TaskStatus, NotifSeverity } from "@/generated/prisma/client";
 import { validateTransition } from "@/lib/transitions";
+import { notify } from "@/lib/notify";
 
 const REASON_REQUIRED_STATUSES: TaskStatus[] = [
   TaskStatus.KILLED,
@@ -27,6 +28,201 @@ const taskIncludes = {
   },
   _count: { select: { chatMessages: true } },
 };
+
+// ---------------------------------------------------------------------------
+// Notification triggers — fire-and-forget after a successful status change
+// ---------------------------------------------------------------------------
+async function triggerStatusNotifications({
+  taskId,
+  taskCode,
+  fromStatus,
+  toStatus,
+  reason,
+  coordinatorId,
+  coordinatorName,
+  teamName,
+  teamResourceId,
+  actorName,
+}: {
+  taskId: string;
+  taskCode: string;
+  fromStatus: TaskStatus;
+  toStatus: TaskStatus;
+  reason: string | undefined;
+  coordinatorId: string;
+  coordinatorName: string;
+  teamName: string | undefined;
+  teamResourceId: string | undefined;
+  actorName: string;
+}) {
+  const n = (
+    userId: string,
+    type: string,
+    message: string,
+    severity: NotifSeverity
+  ) =>
+    notify({ userId, taskId, type, message, severity });
+
+  // Helper: look up the single active Director
+  const findDirector = () =>
+    prisma.user.findFirst({
+      where: { role: Role.DIRECTOR, isActive: true },
+      select: { id: true },
+    });
+
+  // Helper: look up the single active Pro Rector
+  const findProRector = () =>
+    prisma.user.findFirst({
+      where: { role: Role.PRO_RECTOR, isActive: true },
+      select: { id: true },
+    });
+
+  try {
+    switch (toStatus) {
+      // Any -> PENDING_APPROVAL: notify Director
+      case TaskStatus.PENDING_APPROVAL: {
+        const director = await findDirector();
+        if (director) {
+          await n(
+            director.id,
+            "status_change",
+            `${taskCode} submitted for approval by ${coordinatorName}`,
+            NotifSeverity.NORMAL
+          );
+        }
+        break;
+      }
+
+      // PENDING_APPROVAL -> APPROVED_AWAITING_TEAM: notify Coordinator (NORMAL) + Team resource (HIGH)
+      case TaskStatus.APPROVED_AWAITING_TEAM: {
+        if (fromStatus === TaskStatus.PENDING_APPROVAL) {
+          const team = teamName ?? "team";
+          await n(
+            coordinatorId,
+            "status_change",
+            `${taskCode} approved by Director. Assigned to ${team}`,
+            NotifSeverity.NORMAL
+          );
+          if (teamResourceId) {
+            await n(
+              teamResourceId,
+              "status_change",
+              `${taskCode} approved by Director. Assigned to ${team}`,
+              NotifSeverity.HIGH
+            );
+          }
+        }
+        break;
+      }
+
+      // PENDING_APPROVAL -> DRAFT (rejection): notify Coordinator
+      case TaskStatus.DRAFT: {
+        if (fromStatus === TaskStatus.PENDING_APPROVAL) {
+          await n(
+            coordinatorId,
+            "status_change",
+            `${taskCode} rejected by Director: ${reason ?? "no reason given"}`,
+            NotifSeverity.NORMAL
+          );
+        }
+        break;
+      }
+
+      // Any -> REJECTED_BY_TEAM: notify Coordinator (HIGH)
+      case TaskStatus.REJECTED_BY_TEAM: {
+        await n(
+          coordinatorId,
+          "status_change",
+          `${taskCode} rejected by ${teamName ?? "team"}: ${reason ?? "no reason given"}`,
+          NotifSeverity.HIGH
+        );
+        break;
+      }
+
+      // Any -> DEPLOYED: notify Coordinator
+      case TaskStatus.DEPLOYED: {
+        await n(
+          coordinatorId,
+          "status_change",
+          `${taskCode} deployed, awaiting your sign-off`,
+          NotifSeverity.NORMAL
+        );
+        break;
+      }
+
+      // DEPLOYED -> COORDINATOR_ACCEPTED: notify Director
+      case TaskStatus.COORDINATOR_ACCEPTED: {
+        if (fromStatus === TaskStatus.DEPLOYED) {
+          const director = await findDirector();
+          if (director) {
+            await n(
+              director.id,
+              "status_change",
+              `${taskCode} accepted by coordinator, awaiting your final approval`,
+              NotifSeverity.NORMAL
+            );
+          }
+        }
+        break;
+      }
+
+      // Any -> REWORK: notify Team resource (HIGH) + Coordinator (HIGH)
+      case TaskStatus.REWORK: {
+        if (teamResourceId) {
+          await n(
+            teamResourceId,
+            "status_change",
+            `${taskCode} rejected after deployment: ${reason ?? "no reason given"}`,
+            NotifSeverity.HIGH
+          );
+        }
+        await n(
+          coordinatorId,
+          "status_change",
+          `${taskCode} rejected after deployment: ${reason ?? "no reason given"}`,
+          NotifSeverity.HIGH
+        );
+        break;
+      }
+
+      // Any -> PAUSED: notify Pro Rector + Director
+      case TaskStatus.PAUSED: {
+        const [proRector, director] = await Promise.all([
+          findProRector(),
+          findDirector(),
+        ]);
+        const msg = `${taskCode} paused: ${reason ?? "no reason given"}`;
+        if (proRector) {
+          await n(proRector.id, "status_change", msg, NotifSeverity.NORMAL);
+        }
+        if (director) {
+          await n(director.id, "status_change", msg, NotifSeverity.NORMAL);
+        }
+        break;
+      }
+
+      // Any -> KILLED (by Coordinator with history): notify Director
+      case TaskStatus.KILLED: {
+        const director = await findDirector();
+        if (director) {
+          await n(
+            director.id,
+            "status_change",
+            `${taskCode} closed by coordinator: ${reason ?? "no reason given"}`,
+            NotifSeverity.NORMAL
+          );
+        }
+        break;
+      }
+
+      default:
+        break;
+    }
+  } catch (err) {
+    // Notifications are non-critical — log but never fail the request
+    console.error("[notifications] Failed to send status notifications:", err);
+  }
+}
 
 export async function PATCH(
   request: Request,
@@ -189,6 +385,22 @@ export async function PATCH(
       },
     }),
   ]);
+
+  // Fire notifications after the transaction succeeds (non-blocking)
+  triggerStatusNotifications({
+    taskId: id,
+    taskCode: updatedTask.code,
+    fromStatus: task.status,
+    toStatus: newStatus as TaskStatus,
+    reason: reason ?? undefined,
+    coordinatorId: updatedTask.coordinatorId,
+    coordinatorName: updatedTask.coordinator?.name ?? "Coordinator",
+    teamName: updatedTask.team?.name ?? undefined,
+    teamResourceId: updatedTask.team?.resource?.id ?? undefined,
+    actorName: session.user.name ?? "User",
+  }).catch((err) =>
+    console.error("[notifications] Unhandled notification error:", err)
+  );
 
   return NextResponse.json(updatedTask);
 }
