@@ -2,6 +2,8 @@ import { TaskStatus, Role } from "@/generated/prisma/client";
 import {
   VALID_TRANSITIONS,
   STATUS_ROLE_PERMISSIONS,
+  type TaskStatusType,
+  type RoleType,
 } from "@/constants/statuses";
 
 export type TransitionResult =
@@ -18,6 +20,10 @@ export function validateTransition(
     pausedFromStatus?: TaskStatus | null;
   }
 ): TransitionResult {
+  const from = fromStatus as TaskStatusType;
+  const to = toStatus as TaskStatusType;
+  const role = userRole as RoleType;
+
   // Special case: unpausing returns to pausedFromStatus
   if (fromStatus === TaskStatus.PAUSED && toStatus !== TaskStatus.KILLED) {
     if (!options?.pausedFromStatus) {
@@ -36,8 +42,8 @@ export function validateTransition(
   }
 
   // Check if transition is valid
-  const validNext = VALID_TRANSITIONS[fromStatus];
-  if (!validNext || !validNext.includes(toStatus)) {
+  const validNext = VALID_TRANSITIONS[from];
+  if (!validNext || !validNext.includes(to)) {
     return {
       valid: false,
       reason: `Cannot transition from ${fromStatus} to ${toStatus}`,
@@ -45,9 +51,9 @@ export function validateTransition(
   }
 
   // Check role permissions
-  const permissions = STATUS_ROLE_PERMISSIONS[fromStatus];
-  const allowedRoles = permissions?.[toStatus];
-  if (!allowedRoles || !allowedRoles.includes(userRole)) {
+  const permissions = STATUS_ROLE_PERMISSIONS[from];
+  const allowedRoles = permissions?.[to];
+  if (!allowedRoles || !allowedRoles.includes(role)) {
     return {
       valid: false,
       reason: `Role ${userRole} cannot perform this transition`,

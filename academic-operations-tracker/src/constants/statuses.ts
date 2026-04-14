@@ -1,81 +1,90 @@
-import { TaskStatus, Role } from "@/generated/prisma/client";
+// Client-safe status constants — no Prisma imports
 
-export const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
-  DRAFT:                  [TaskStatus.PENDING_APPROVAL, TaskStatus.KILLED],
-  PENDING_APPROVAL:       [TaskStatus.APPROVED_AWAITING_TEAM, TaskStatus.DRAFT, TaskStatus.KILLED],
-  APPROVED_AWAITING_TEAM: [TaskStatus.ACCEPTED_BY_TEAM, TaskStatus.REJECTED_BY_TEAM, TaskStatus.PAUSED, TaskStatus.KILLED],
-  ACCEPTED_BY_TEAM:       [TaskStatus.IN_ANALYSIS, TaskStatus.PAUSED, TaskStatus.KILLED],
-  IN_ANALYSIS:            [TaskStatus.IN_DEVELOPMENT, TaskStatus.PAUSED, TaskStatus.KILLED],
-  IN_DEVELOPMENT:         [TaskStatus.IN_TESTING, TaskStatus.PAUSED, TaskStatus.KILLED],
-  IN_TESTING:             [TaskStatus.DEPLOYED, TaskStatus.IN_DEVELOPMENT, TaskStatus.PAUSED, TaskStatus.KILLED],
-  DEPLOYED:               [TaskStatus.COORDINATOR_ACCEPTED, TaskStatus.REWORK, TaskStatus.PAUSED, TaskStatus.KILLED],
-  COORDINATOR_ACCEPTED:   [TaskStatus.ACCEPTED_CLOSED, TaskStatus.REWORK, TaskStatus.KILLED],
-  REWORK:                 [TaskStatus.IN_DEVELOPMENT, TaskStatus.PAUSED, TaskStatus.KILLED],
-  REJECTED_BY_TEAM:       [TaskStatus.DRAFT, TaskStatus.KILLED],
-  PAUSED:                 [TaskStatus.KILLED],
+export type TaskStatusType =
+  | "DRAFT" | "PENDING_APPROVAL" | "APPROVED_AWAITING_TEAM" | "ACCEPTED_BY_TEAM"
+  | "IN_ANALYSIS" | "IN_DEVELOPMENT" | "IN_TESTING" | "DEPLOYED"
+  | "COORDINATOR_ACCEPTED" | "ACCEPTED_CLOSED" | "REWORK" | "REJECTED_BY_TEAM"
+  | "PAUSED" | "KILLED";
+
+export type RoleType =
+  | "ADMIN" | "PRO_RECTOR" | "DIRECTOR" | "COORDINATOR" | "TEAM_RESOURCE";
+
+export const VALID_TRANSITIONS: Record<TaskStatusType, TaskStatusType[]> = {
+  DRAFT:                  ["PENDING_APPROVAL", "KILLED"],
+  PENDING_APPROVAL:       ["APPROVED_AWAITING_TEAM", "DRAFT", "KILLED"],
+  APPROVED_AWAITING_TEAM: ["ACCEPTED_BY_TEAM", "REJECTED_BY_TEAM", "PAUSED", "KILLED"],
+  ACCEPTED_BY_TEAM:       ["IN_ANALYSIS", "PAUSED", "KILLED"],
+  IN_ANALYSIS:            ["IN_DEVELOPMENT", "PAUSED", "KILLED"],
+  IN_DEVELOPMENT:         ["IN_TESTING", "PAUSED", "KILLED"],
+  IN_TESTING:             ["DEPLOYED", "IN_DEVELOPMENT", "PAUSED", "KILLED"],
+  DEPLOYED:               ["COORDINATOR_ACCEPTED", "REWORK", "PAUSED", "KILLED"],
+  COORDINATOR_ACCEPTED:   ["ACCEPTED_CLOSED", "REWORK", "KILLED"],
+  REWORK:                 ["IN_DEVELOPMENT", "PAUSED", "KILLED"],
+  REJECTED_BY_TEAM:       ["DRAFT", "KILLED"],
+  PAUSED:                 ["KILLED"],
   ACCEPTED_CLOSED:        [],
   KILLED:                 [],
 };
 
-export const STATUS_ROLE_PERMISSIONS: Record<TaskStatus, Partial<Record<TaskStatus, Role[]>>> = {
+export const STATUS_ROLE_PERMISSIONS: Record<TaskStatusType, Partial<Record<TaskStatusType, RoleType[]>>> = {
   DRAFT: {
-    [TaskStatus.PENDING_APPROVAL]: [Role.COORDINATOR],
-    [TaskStatus.KILLED]: [Role.COORDINATOR, Role.DIRECTOR, Role.PRO_RECTOR],
+    PENDING_APPROVAL: ["COORDINATOR"],
+    KILLED: ["COORDINATOR", "DIRECTOR", "PRO_RECTOR"],
   },
   PENDING_APPROVAL: {
-    [TaskStatus.APPROVED_AWAITING_TEAM]: [Role.DIRECTOR],
-    [TaskStatus.DRAFT]: [Role.DIRECTOR],
-    [TaskStatus.KILLED]: [Role.DIRECTOR, Role.PRO_RECTOR],
+    APPROVED_AWAITING_TEAM: ["DIRECTOR"],
+    DRAFT: ["DIRECTOR"],
+    KILLED: ["DIRECTOR", "PRO_RECTOR"],
   },
   APPROVED_AWAITING_TEAM: {
-    [TaskStatus.ACCEPTED_BY_TEAM]: [Role.TEAM_RESOURCE],
-    [TaskStatus.REJECTED_BY_TEAM]: [Role.TEAM_RESOURCE],
-    [TaskStatus.PAUSED]: [Role.TEAM_RESOURCE, Role.DIRECTOR, Role.PRO_RECTOR],
-    [TaskStatus.KILLED]: [Role.DIRECTOR, Role.PRO_RECTOR],
+    ACCEPTED_BY_TEAM: ["TEAM_RESOURCE"],
+    REJECTED_BY_TEAM: ["TEAM_RESOURCE"],
+    PAUSED: ["TEAM_RESOURCE", "DIRECTOR", "PRO_RECTOR"],
+    KILLED: ["DIRECTOR", "PRO_RECTOR"],
   },
   ACCEPTED_BY_TEAM: {
-    [TaskStatus.IN_ANALYSIS]: [Role.TEAM_RESOURCE],
-    [TaskStatus.PAUSED]: [Role.TEAM_RESOURCE, Role.DIRECTOR, Role.PRO_RECTOR],
-    [TaskStatus.KILLED]: [Role.DIRECTOR, Role.PRO_RECTOR],
+    IN_ANALYSIS: ["TEAM_RESOURCE"],
+    PAUSED: ["TEAM_RESOURCE", "DIRECTOR", "PRO_RECTOR"],
+    KILLED: ["DIRECTOR", "PRO_RECTOR"],
   },
   IN_ANALYSIS: {
-    [TaskStatus.IN_DEVELOPMENT]: [Role.TEAM_RESOURCE],
-    [TaskStatus.PAUSED]: [Role.TEAM_RESOURCE, Role.DIRECTOR, Role.PRO_RECTOR],
-    [TaskStatus.KILLED]: [Role.DIRECTOR, Role.PRO_RECTOR],
+    IN_DEVELOPMENT: ["TEAM_RESOURCE"],
+    PAUSED: ["TEAM_RESOURCE", "DIRECTOR", "PRO_RECTOR"],
+    KILLED: ["DIRECTOR", "PRO_RECTOR"],
   },
   IN_DEVELOPMENT: {
-    [TaskStatus.IN_TESTING]: [Role.TEAM_RESOURCE],
-    [TaskStatus.PAUSED]: [Role.TEAM_RESOURCE, Role.DIRECTOR, Role.PRO_RECTOR],
-    [TaskStatus.KILLED]: [Role.DIRECTOR, Role.PRO_RECTOR],
+    IN_TESTING: ["TEAM_RESOURCE"],
+    PAUSED: ["TEAM_RESOURCE", "DIRECTOR", "PRO_RECTOR"],
+    KILLED: ["DIRECTOR", "PRO_RECTOR"],
   },
   IN_TESTING: {
-    [TaskStatus.DEPLOYED]: [Role.TEAM_RESOURCE],
-    [TaskStatus.IN_DEVELOPMENT]: [Role.TEAM_RESOURCE],
-    [TaskStatus.PAUSED]: [Role.TEAM_RESOURCE, Role.DIRECTOR, Role.PRO_RECTOR],
-    [TaskStatus.KILLED]: [Role.DIRECTOR, Role.PRO_RECTOR],
+    DEPLOYED: ["TEAM_RESOURCE"],
+    IN_DEVELOPMENT: ["TEAM_RESOURCE"],
+    PAUSED: ["TEAM_RESOURCE", "DIRECTOR", "PRO_RECTOR"],
+    KILLED: ["DIRECTOR", "PRO_RECTOR"],
   },
   DEPLOYED: {
-    [TaskStatus.COORDINATOR_ACCEPTED]: [Role.COORDINATOR],
-    [TaskStatus.REWORK]: [Role.COORDINATOR, Role.DIRECTOR],
-    [TaskStatus.PAUSED]: [Role.COORDINATOR, Role.DIRECTOR, Role.PRO_RECTOR],
-    [TaskStatus.KILLED]: [Role.DIRECTOR, Role.PRO_RECTOR],
+    COORDINATOR_ACCEPTED: ["COORDINATOR"],
+    REWORK: ["COORDINATOR", "DIRECTOR"],
+    PAUSED: ["COORDINATOR", "DIRECTOR", "PRO_RECTOR"],
+    KILLED: ["DIRECTOR", "PRO_RECTOR"],
   },
   COORDINATOR_ACCEPTED: {
-    [TaskStatus.ACCEPTED_CLOSED]: [Role.DIRECTOR],
-    [TaskStatus.REWORK]: [Role.DIRECTOR],
-    [TaskStatus.KILLED]: [Role.DIRECTOR, Role.PRO_RECTOR],
+    ACCEPTED_CLOSED: ["DIRECTOR"],
+    REWORK: ["DIRECTOR"],
+    KILLED: ["DIRECTOR", "PRO_RECTOR"],
   },
   REWORK: {
-    [TaskStatus.IN_DEVELOPMENT]: [Role.TEAM_RESOURCE],
-    [TaskStatus.PAUSED]: [Role.TEAM_RESOURCE, Role.DIRECTOR, Role.PRO_RECTOR],
-    [TaskStatus.KILLED]: [Role.DIRECTOR, Role.PRO_RECTOR],
+    IN_DEVELOPMENT: ["TEAM_RESOURCE"],
+    PAUSED: ["TEAM_RESOURCE", "DIRECTOR", "PRO_RECTOR"],
+    KILLED: ["DIRECTOR", "PRO_RECTOR"],
   },
   REJECTED_BY_TEAM: {
-    [TaskStatus.DRAFT]: [Role.COORDINATOR],
-    [TaskStatus.KILLED]: [Role.COORDINATOR, Role.DIRECTOR, Role.PRO_RECTOR],
+    DRAFT: ["COORDINATOR"],
+    KILLED: ["COORDINATOR", "DIRECTOR", "PRO_RECTOR"],
   },
   PAUSED: {
-    [TaskStatus.KILLED]: [Role.DIRECTOR, Role.PRO_RECTOR],
+    KILLED: ["DIRECTOR", "PRO_RECTOR"],
   },
   ACCEPTED_CLOSED: {},
   KILLED: {},
