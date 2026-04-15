@@ -1,23 +1,38 @@
 import { NextAuthOptions } from "next-auth";
 import AzureADProvider from "next-auth/providers/azure-ad";
+import GoogleProvider from "next-auth/providers/google";
 import { prisma } from "./prisma";
 import { Role } from "@/generated/prisma/client";
 
 export const authOptions: NextAuthOptions = {
   providers: [
-    AzureADProvider({
-      clientId: process.env.AZURE_AD_CLIENT_ID!,
-      clientSecret: process.env.AZURE_AD_CLIENT_SECRET!,
-      tenantId: process.env.AZURE_AD_TENANT_ID!,
-      authorization: {
-        params: {
-          scope: "openid profile email User.Read",
-        },
-      },
-    }),
+    // Microsoft 365 SSO (primary — when Azure AD is available)
+    ...(process.env.AZURE_AD_CLIENT_ID
+      ? [
+          AzureADProvider({
+            clientId: process.env.AZURE_AD_CLIENT_ID!,
+            clientSecret: process.env.AZURE_AD_CLIENT_SECRET!,
+            tenantId: process.env.AZURE_AD_TENANT_ID!,
+            authorization: {
+              params: {
+                scope: "openid profile email User.Read",
+              },
+            },
+          }),
+        ]
+      : []),
+    // Google OAuth (alternative — works immediately)
+    ...(process.env.GOOGLE_CLIENT_ID
+      ? [
+          GoogleProvider({
+            clientId: process.env.GOOGLE_CLIENT_ID!,
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+          }),
+        ]
+      : []),
   ],
   callbacks: {
-    async signIn({ user, profile }) {
+    async signIn({ user, account, profile }) {
       if (!user.email) return false;
 
       const dbUser = await prisma.user.findUnique({
@@ -26,11 +41,27 @@ export const authOptions: NextAuthOptions = {
 
       if (!dbUser || !dbUser.isActive) return false;
 
-      // Capture Microsoft OID on first login
-      if (!dbUser.msId && (profile as Record<string, unknown>)?.oid) {
+      // Capture Microsoft OID on first login (Azure AD)
+      if (
+        account?.provider === "azure-ad" &&
+        !dbUser.msId &&
+        (profile as Record<string, unknown>)?.oid
+      ) {
         await prisma.user.update({
           where: { id: dbUser.id },
           data: { msId: (profile as Record<string, unknown>).oid as string },
+        });
+      }
+
+      // Capture Google ID on first login (Google)
+      if (
+        account?.provider === "google" &&
+        !dbUser.msId &&
+        (profile as Record<string, unknown>)?.sub
+      ) {
+        await prisma.user.update({
+          where: { id: dbUser.id },
+          data: { msId: (profile as Record<string, unknown>).sub as string },
         });
       }
 
